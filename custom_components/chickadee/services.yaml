@@ -1,0 +1,269 @@
+# =============================================================================
+# Chickadee Integration Services
+# =============================================================================
+#
+# Services are organized by function to match the Chickadee sidebar sections.
+#
+
+
+# =============================================================================
+# DISPLAY & NAVIGATION
+# =============================================================================
+# Control screen brightness, load URLs, and navigate the dashboard.
+
+load_url:
+  name: Load URL
+  description: Navigate a Chickadee device to a URL
+  fields:
+    device_id:
+      name: Device ID
+      description: The device to control
+      required: true
+      selector:
+        entity:
+          integration: chickadee
+    url:
+      name: URL
+      description: The URL to load
+      required: true
+      selector:
+        text:
+
+set_brightness:
+  name: Set Brightness
+  description: Set the screen brightness on a Chickadee device
+  fields:
+    device_id:
+      name: Device ID
+      description: The device to control
+      required: true
+      selector:
+        entity:
+          integration: chickadee
+    brightness:
+      name: Brightness
+      description: Brightness level (0-100)
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 5
+          unit_of_measurement: "%"
+
+
+# =============================================================================
+# AUDIO & SPEECH
+# =============================================================================
+# Control volume and text-to-speech.
+
+set_volume:
+  name: Set Volume
+  description: Set the audio volume on a Chickadee device
+  fields:
+    device_id:
+      name: Device ID
+      description: The device to control
+      required: true
+      selector:
+        entity:
+          integration: chickadee
+    volume:
+      name: Volume
+      description: Volume level (0-10)
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 10
+          step: 1
+
+speak:
+  name: Speak Text
+  description: Use text-to-speech on a Chickadee device
+  fields:
+    device_id:
+      name: Device ID
+      description: The device to speak on
+      required: true
+      selector:
+        entity:
+          integration: chickadee
+    message:
+      name: Message
+      description: The text to speak
+      required: true
+      selector:
+        text:
+
+
+# =============================================================================
+# TIMERS (Unique to Chickadee!)
+# =============================================================================
+# Internal timer management - no Home Assistant timer helpers required.
+# Supports up to 3 concurrent timers with automatic slot assignment.
+
+start_timer:
+  name: Start Timer
+  description: Start a timer and show it on all Chickadee devices (up to 3 concurrent timers)
+  fields:
+    duration:
+      name: Duration
+      description: Timer duration (e.g., "5:00" for 5 minutes, "1:30:00" for 1.5 hours, "5 minutes", or seconds as number)
+      required: true
+      example: "5:00"
+      selector:
+        text:
+    label:
+      name: Label
+      description: Custom label for the timer (optional, defaults to "Timer N (duration)")
+      required: false
+      example: "Pizza"
+      selector:
+        text:
+
+pause_timer:
+  name: Pause/Resume Timer
+  description: Pause a running timer or resume a paused timer. If only one timer is active, it will be toggled automatically.
+  fields:
+    slot:
+      name: Slot
+      description: Timer slot (1-3). Optional if only one timer is running.
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 3
+          mode: box
+    timer_id:
+      name: Timer ID
+      description: Specific timer ID (alternative to slot). Optional if only one timer is running.
+      required: false
+      selector:
+        text:
+
+cancel_timer:
+  name: Cancel Timer
+  description: Cancel a timer and hide it from Chickadee devices. If only one timer is active, it will be cancelled automatically.
+  fields:
+    slot:
+      name: Slot
+      description: Timer slot (1-3). Optional if only one timer is running.
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 3
+          mode: box
+    timer_id:
+      name: Timer ID
+      description: Specific timer ID (alternative to slot). Optional if only one timer is running.
+      required: false
+      selector:
+        text:
+
+
+# =============================================================================
+# NOTIFICATIONS & MESSAGING
+# =============================================================================
+# Display overlay messages and notifications.
+
+show_message:
+  name: Show Message
+  description: Display an overlay message on a Chickadee device
+  fields:
+    device_id:
+      name: Device ID
+      description: The device to show the message on
+      required: true
+      selector:
+        entity:
+          integration: chickadee
+    message:
+      name: Message
+      description: The message to display
+      required: true
+      selector:
+        text:
+    duration:
+      name: Duration
+      description: How long to show the message (milliseconds)
+      default: 3000
+      selector:
+        number:
+          min: 1000
+          max: 30000
+          step: 1000
+          unit_of_measurement: "ms"
+
+
+# =============================================================================
+# ADVANCED / LOW-LEVEL
+# =============================================================================
+# Direct command execution for advanced users and automation.
+
+# =============================================================================
+# CONFIGURATION
+# =============================================================================
+# Set shared configuration values (tokens, URLs) that Chickadee devices fetch
+# from the central store. Send only the keys you want to update.
+
+set_config:
+  name: Set Config
+  description: Update shared Chickadee configuration. Devices pick up changes on next connect/reconnect.
+  fields:
+    ma_token:
+      name: Music Assistant Token
+      description: Long-lived Music Assistant JWT token (create in MA Settings → Users → Create Token)
+      required: false
+      selector:
+        text:
+    ma_url:
+      name: Music Assistant URL
+      description: Music Assistant server URL (e.g. http://192.168.1.x:8095). Only needed if changing servers.
+      required: false
+      selector:
+        text:
+    immich_token:
+      name: Immich Token
+      description: Immich API access token
+      required: false
+      selector:
+        text:
+    immich_url:
+      name: Immich URL
+      description: Immich server URL (e.g. http://192.168.1.x:2283)
+      required: false
+      selector:
+        text:
+
+
+send_command:
+  name: Send Command
+  description: Send a low-level command to a Chickadee device (for advanced use)
+  fields:
+    device_id:
+      name: Device ID
+      description: The device to send the command to (entity ID or device ID)
+      required: true
+      selector:
+        entity:
+          integration: chickadee
+    command:
+      name: Command
+      description: The command to send
+      required: true
+      selector:
+        select:
+          options:
+            - screenOn
+            - screenOff
+            - startScreensaver
+            - stopScreensaver
+            - loadStartUrl
+            - restartApp
+            - toForeground
+            - lockKiosk
+            - unlockKiosk
+            - clearCache
+            - clearWebstorage

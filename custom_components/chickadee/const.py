@@ -1,0 +1,151 @@
+"""Constants for Chickadee integration."""
+
+DOMAIN = "chickadee"
+
+# The sibling VOICE integration of this same brand. Voice-gateway ownership is a
+# within-brand handshake: this integration cedes the /api/chickadee/voice/* routes
+# when its sibling is configured (see __init__.py), and the sibling stands down
+# when we are present and have NOT ceded. Both halves name each other through a
+# constant, never an inline literal — this pairing has already broken once, when
+# the sibling renamed its domain (chickadee -> chickadee_voice) and this side kept
+# testing the dead name, so nobody ever ceded and the sibling DROP'd forever.
+# Cross-brand pairs never collide: each brand serves its own route prefix.
+VOICE_SIBLING_DOMAIN = "chickadee_voice"
+
+
+def host_for_url(host: str) -> str:
+    """Bracket an IPv6 literal so it's valid inside an http URL.
+
+    ``http://fc00::1:2323/`` is malformed; ``http://[fc00::1]:2323/`` is correct.
+    IPv4 / hostnames / already-bracketed values pass through unchanged.
+    """
+    if host and ":" in host and not host.startswith("["):
+        return f"[{host}]"
+    return host
+
+# Config keys
+CONF_HOST = "host"
+CONF_PORT = "port"
+CONF_PASSWORD = "password"
+CONF_DEVICE_ID = "device_id"
+CONF_DEVICE_NAME = "device_name"
+CONF_MEDIA_FOLDER = "media_folder"
+CONF_MEDIA_BASE_PATH = "media_base_path"
+
+# Defaults
+DEFAULT_PORT = 2323
+DEFAULT_SCAN_INTERVAL = 5
+DEFAULT_MEDIA_FOLDER = "."  # Root of media folder
+DEFAULT_MEDIA_BASE_PATH = ""  # Empty = use /config/media, otherwise absolute path
+
+# =============================================================================
+# API Endpoints
+# =============================================================================
+
+# Device Info
+API_DEVICE_INFO = "deviceInfo"
+
+# Screen & Display Control
+API_SCREEN_ON = "screenOn"
+API_SCREEN_OFF = "screenOff"
+API_SET_BRIGHTNESS = "setStringSetting"  # key=screenBrightness, value=0-255
+API_SET_DARK_MODE = "setDarkMode"
+
+# Screen off method
+API_SET_SCREEN_OFF_METHOD = "setScreenOffMethod"
+
+# Screensaver
+API_START_SCREENSAVER = "startScreensaver"
+API_STOP_SCREENSAVER = "stopScreensaver"
+API_SET_SCREENSAVER_MODE = "setScreensaverMode"
+API_SET_HA_MEDIA_FOLDER = "setHaMediaFolder"
+
+# Navigation & URL
+API_LOAD_START_URL = "loadStartUrl"
+API_LOAD_URL = "loadUrl"
+
+# App Control
+API_BRING_TO_FOREGROUND = "toForeground"
+API_RESTART_APP = "restartApp"
+API_REBOOT_DEVICE = "rebootDevice"
+API_EXIT_APP = "exitApp"
+
+# Kiosk Lock
+API_LOCK_KIOSK = "lockKiosk"
+API_UNLOCK_KIOSK = "unlockKiosk"
+API_SET_PIN = "setPin"
+API_CLEAR_PIN = "clearPin"
+
+# Audio
+API_SET_VOLUME = "setAudioVolume"
+API_MUTE_AUDIO = "muteAudio"
+API_UNMUTE_AUDIO = "unmuteAudio"
+API_PLAY_SOUND = "playSound"
+API_STOP_SOUND = "stopSound"
+API_PAUSE_SOUND = "pauseSound"
+API_RESUME_SOUND = "resumeSound"
+API_SEEK_SOUND = "seekSound"
+API_TEXT_TO_SPEECH = "textToSpeech"
+API_STOP_TEXT_TO_SPEECH = "stopTextToSpeech"
+
+# Settings (generic setters)
+API_SET_STRING_SETTING = "setStringSetting"  # key, value
+API_SET_BOOLEAN_SETTING = "setBooleanSetting"  # key, value (true/false)
+
+# WebView & Cache
+API_CLEAR_CACHE = "clearCache"
+API_CLEAR_WEBSTORAGE = "clearWebstorage"
+API_REFRESH_WEBVIEW = "refreshWebView"
+
+# Camera & RTSP
+API_GET_SCREENSHOT = "getScreenshot"
+API_GET_CAMSHOT = "getCamshot"
+API_START_RTSP_STREAM = "startRtspStream"
+API_STOP_RTSP_STREAM = "stopRtspStream"
+API_GET_RTSP_STATUS = "getRtspStatus"
+
+# Motion Detection
+API_TRIGGER_MOTION = "triggerMotion"
+
+# =============================================================================
+# Setting Keys (for setStringSetting/setBooleanSetting)
+# =============================================================================
+
+SETTING_KEEP_SCREEN_ON = "keepScreenOn"
+SETTING_AUTO_BRIGHTNESS = "autoBrightness"
+SETTING_SCREEN_BRIGHTNESS = "screenBrightness"
+SETTING_SCREENSAVER_TIMEOUT = "screensaverTimeout"
+SETTING_MOTION_WAKE_MODE = "motionWakeMode"
+SETTING_START_ON_BOOT = "startOnBoot"
+SETTING_RTSP_ENABLED = "rtspEnabled"
+SETTING_HIDE_SIDEBAR = "hideSidebar"
+SETTING_HIDE_HEADER = "hideHeader"  # "Hide Tabs" in UI
+SETTING_HA_URL = "startUrl"  # Android API uses startUrl for setStringSetting
+SETTING_API_PASSWORD = "apiPassword"
+SETTING_ZOOM = "textScaling"  # WebView text/zoom scaling (50-200%)
+
+# Camera/RTSP settings
+SETTING_RTSP_FRAME_RATE = "rtspFrameRate"
+SETTING_RTSP_RESOLUTION = "rtspResolution"
+SETTING_RTSP_SOFTWARE_ENCODING = "rtspSoftwareEncoding"
+
+# =============================================================================
+# Enums & Constants
+# =============================================================================
+
+# Screensaver modes
+SCREENSAVER_MODES = ["dim", "black", "off", "url", "photos", "weather", "ha_page", "app"]
+
+# Screen off methods
+SCREEN_OFF_METHODS = {
+    "overlay": "Black Overlay",
+    "hardware": "Power Off Screen",
+}
+
+# Motion wake modes (matching Android enum)
+MOTION_WAKE_MODES = {
+    "disabled": "Disabled",
+    "brightness": "Brightness Sensor",
+    "camera": "Camera-based",
+}
+

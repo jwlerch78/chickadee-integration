@@ -1,0 +1,266 @@
+"""Select entities for Chickadee integration."""
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+from homeassistant.components.select import SelectEntity
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity import EntityCategory
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+
+from .const import (
+    DOMAIN,
+    CONF_DEVICE_ID,
+    API_SET_SCREENSAVER_MODE,
+    API_SET_SCREEN_OFF_METHOD,
+    API_SET_HA_MEDIA_FOLDER,
+    API_SET_STRING_SETTING,
+    SETTING_MOTION_WAKE_MODE,
+    MOTION_WAKE_MODES,
+    SCREEN_OFF_METHODS,
+)
+from .coordinator import ChickadeeCoordinator
+from .entity import ChickadeeEntity
+from .media_api import _get_media_base_path, _list_media_folders
+
+_LOGGER = logging.getLogger(__name__)
+
+
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
+    """Set up Chickadee select entities."""
+    coordinator: ChickadeeCoordinator = hass.data[DOMAIN][entry.entry_id]
+    device_id = entry.data[CONF_DEVICE_ID]
+
+    entities = [
+        ChickadeeScreensaverModeSelect(coordinator, device_id),
+        ChickadeeScreensaverPhotoFolderSelect(coordinator, device_id, hass),
+        ChickadeeMotionWakeModeSelect(coordinator, device_id),
+        ChickadeeScreenOffMethodSelect(coordinator, device_id),
+    ]
+
+    async_add_entities(entities)
+
+
+class ChickadeeScreensaverModeSelect(ChickadeeEntity, SelectEntity):
+    """Screensaver mode select."""
+
+    _attr_icon = "mdi:sleep"
+    _attr_translation_key = "screensaver_mode"
+    _attr_entity_category = EntityCategory.CONFIG
+
+    # Map API values to display values
+    _mode_display_map = {
+        "dim": "Dim",
+        "black": "Black Overlay",
+        "off": "Screen Off",
+        "url": "URL",
+        "photos": "Photos",
+        "weather": "Weather & Time",
+        "ha_page": "HA Page",
+        "app": "App",
+    }
+
+    def __init__(self, coordinator: ChickadeeCoordinator, device_id: str) -> None:
+        """Initialize the select."""
+        super().__init__(coordinator, device_id)
+        self._attr_unique_id = f"{device_id}_screensaver_mode"
+        self._attr_name = "Screensaver: Mode"
+        self._attr_options = [
+            "Dim", "Black Overlay", "Screen Off",
+            "Photos", "Weather & Time", "HA Page", "URL", "App",
+        ]
+
+    @property
+    def current_option(self) -> str | None:
+        """Return the current screensaver mode."""
+        if self.coordinator.data:
+            mode = self.coordinator.data.get("screensaverMode", "dim")
+            # Use display map for proper capitalization (especially for URL)
+            return self._mode_display_map.get(mode, mode.capitalize() if mode else "Dim")
+        return None
+
+    # Reverse map: display value -> API value
+    _mode_api_map = {v: k for k, v in _mode_display_map.items()}
+
+    async def async_select_option(self, option: str) -> None:
+        """Set the screensaver mode."""
+        mode = self._mode_api_map.get(option, option.lower())
+        success = await self.coordinator.send_command(API_SET_SCREENSAVER_MODE, mode=mode)
+        if success:
+            # Optimistic update so the UI reflects the new value immediately
+            # instead of waiting for the next coordinator poll. The next
+            # poll confirms it (and corrects if the device rejected).
+            if self.coordinator.data is not None:
+                self.coordinator.data["screensaverMode"] = mode
+                self.async_write_ha_state()
+        await self.coordinator.async_request_refresh()
+
+
+class ChickadeeScreensaverPhotoFolderSelect(ChickadeeEntity, SelectEntity):
+    """Screensaver photo folder select - dynamically fetches folders from HA Media."""
+
+    _attr_icon = "mdi:folder-image"
+    _attr_translation_key = "screensaver_photo_src_folder"
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(self, coordinator: ChickadeeCoordinator, device_id: str, hass: HomeAssistant) -> None:
+        """Initialize the select."""
+        super().__init__(coordinator, device_id)
+        self._hass = hass
+        self._attr_unique_id = f"{device_id}_screensaver_photo_src_folder"
+        self._attr_name = "Screensaver: Photo Src Folder"
+        self._cached_folders: list[dict] = []
+        self._attr_options = ["(root)"]  # Default until we fetch folders
+
+    async def async_added_to_hass(self) -> None:
+        """Run when entity is added to hass."""
+        await super().async_added_to_hass()
+        # Fetch available folders
+        await self._update_folder_options()
+
+    async def _update_folder_options(self) -> None:
+        """Fetch available folders from HA Media and update options."""
+        try:
+            media_dir = await self._hass.async_add_executor_job(_get_media_base_path, self._hass)
+            if media_dir.exists():
+                folders = await self._hass.async_add_executor_job(_list_media_folders, media_dir)
+                self._cached_folders = folders
+                # Build options list - use folder name for display, path for value
+                options = []
+                for folder in folders:
+                    if folder["path"] == "*":
+                        options.append("All")
+                    elif folder["path"] == ".":
+                        options.append("(root)")
+                    else:
+                        options.append(folder["name"])
+                if options:
+                    self._attr_options = options
+                else:
+                    self._attr_options = ["(no folders)"]
+                _LOGGER.debug("Updated folder options: %s", self._attr_options)
+        except Exception as e:
+            _LOGGER.warning("Failed to fetch media folders: %s", e)
+            self._attr_options = ["(error)"]
+
+    @property
+    def current_option(self) -> str | None:
+        """Return the current folder."""
+        if self.coordinator.data:
+            folder_path = self.coordinator.data.get("haMediaFolder", ".")
+            # Map path to display name
+            if folder_path == "*":
+                return "All"
+            if folder_path == ".":
+                return "(root)"
+            # Find the folder name that matches this path
+            for folder in self._cached_folders:
+                if folder["path"] == folder_path:
+                    return folder["name"]
+            # If not found in cache, return as-is
+            return folder_path
+        return None
+
+    async def async_select_option(self, option: str) -> None:
+        """Set the photo folder."""
+        # Map display name back to path
+        if option == "All":
+            folder_path = "*"
+        elif option == "(root)":
+            folder_path = "."
+        else:
+            # Find the path for this folder name
+            folder_path = option  # Default to using the option as path
+            for folder in self._cached_folders:
+                if folder["name"] == option:
+                    folder_path = folder["path"]
+                    break
+
+        await self.coordinator.send_command(API_SET_HA_MEDIA_FOLDER, folder=folder_path)
+        await self.coordinator.async_request_refresh()
+
+    async def async_update(self) -> None:
+        """Update entity state - also refresh folder list periodically."""
+        await super().async_update()
+        # Refresh folder list if we don't have any cached
+        if not self._cached_folders or len(self._cached_folders) == 0:
+            await self._update_folder_options()
+
+
+class ChickadeeMotionWakeModeSelect(ChickadeeEntity, SelectEntity):
+    """Motion wake mode select - how the device wakes from screensaver."""
+
+    _attr_icon = "mdi:motion-sensor"
+    _attr_translation_key = "motion_wake_mode"
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(self, coordinator: ChickadeeCoordinator, device_id: str) -> None:
+        """Initialize the select."""
+        super().__init__(coordinator, device_id)
+        self._attr_unique_id = f"{device_id}_motion_wake_mode"
+        self._attr_name = "Screensaver: Motion Wake"
+        # Options from MOTION_WAKE_MODES values
+        self._attr_options = list(MOTION_WAKE_MODES.values())
+
+    @property
+    def current_option(self) -> str | None:
+        """Return the current motion wake mode."""
+        if self.coordinator.data:
+            mode = self.coordinator.data.get("motionWakeMode", "disabled")
+            return MOTION_WAKE_MODES.get(mode, "Disabled")
+        return None
+
+    async def async_select_option(self, option: str) -> None:
+        """Set the motion wake mode."""
+        # Find the API value for this display option
+        mode_key = "disabled"
+        for key, value in MOTION_WAKE_MODES.items():
+            if value == option:
+                mode_key = key
+                break
+        await self.coordinator.send_command(
+            API_SET_STRING_SETTING, key=SETTING_MOTION_WAKE_MODE, value=mode_key
+        )
+        await self.coordinator.async_request_refresh()
+
+
+class ChickadeeScreenOffMethodSelect(ChickadeeEntity, SelectEntity):
+    """Screen off method select - overlay (fast wake) vs hardware (real off)."""
+
+    _attr_icon = "mdi:monitor-off"
+    _attr_translation_key = "screen_off_method"
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(self, coordinator: ChickadeeCoordinator, device_id: str) -> None:
+        """Initialize the select."""
+        super().__init__(coordinator, device_id)
+        self._attr_unique_id = f"{device_id}_screen_off_method"
+        self._attr_name = "Screen Off Behavior"
+        self._attr_options = list(SCREEN_OFF_METHODS.values())
+
+    @property
+    def current_option(self) -> str | None:
+        """Return the current screen off method."""
+        if self.coordinator.data:
+            method = self.coordinator.data.get("screenOffMethod", "overlay")
+            return SCREEN_OFF_METHODS.get(method, "Black Overlay")
+        return None
+
+    async def async_select_option(self, option: str) -> None:
+        """Set the screen off method."""
+        # Find the API value for this display option
+        method_key = "overlay"
+        for key, value in SCREEN_OFF_METHODS.items():
+            if value == option:
+                method_key = key
+                break
+        await self.coordinator.send_command(
+            API_SET_SCREEN_OFF_METHOD, method=method_key
+        )
+        await self.coordinator.async_request_refresh()

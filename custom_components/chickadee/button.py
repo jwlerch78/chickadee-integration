@@ -1,0 +1,175 @@
+"""Button entities for Chickadee integration."""
+from __future__ import annotations
+
+from homeassistant.components.button import ButtonEntity
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity import EntityCategory
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+
+from .const import (
+    DOMAIN,
+    CONF_DEVICE_ID,
+    API_LOAD_START_URL,
+    API_BRING_TO_FOREGROUND,
+    API_RESTART_APP,
+    API_REBOOT_DEVICE,
+    API_CLEAR_CACHE,
+    API_CLEAR_WEBSTORAGE,
+    API_REFRESH_WEBVIEW,
+)
+from .coordinator import ChickadeeCoordinator
+from .entity import ChickadeeEntity
+
+
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
+    """Set up Chickadee buttons."""
+    coordinator: ChickadeeCoordinator = hass.data[DOMAIN][entry.entry_id]
+    device_id = entry.data[CONF_DEVICE_ID]
+
+    entities = [
+        # Primary buttons (frequently used)
+        ChickadeeReloadButton(coordinator, device_id),
+        ChickadeeForegroundButton(coordinator, device_id),
+        # Maintenance buttons (CONFIG category)
+        ChickadeeRefreshWebViewButton(coordinator, device_id),
+        ChickadeeRestartButton(coordinator, device_id),
+        ChickadeeRebootButton(coordinator, device_id),
+        ChickadeeClearCacheButton(coordinator, device_id),
+        ChickadeeClearStorageButton(coordinator, device_id),
+    ]
+
+    async_add_entities(entities)
+
+
+class ChickadeeReloadButton(ChickadeeEntity, ButtonEntity):
+    """Reload dashboard button."""
+
+    _attr_icon = "mdi:refresh"
+    _attr_translation_key = "reload"
+
+    def __init__(self, coordinator: ChickadeeCoordinator, device_id: str) -> None:
+        """Initialize the button."""
+        super().__init__(coordinator, device_id)
+        self._attr_unique_id = f"{device_id}_reload"
+        self._attr_name = "Reload Dashboard"
+
+    async def async_press(self) -> None:
+        """Reload the dashboard."""
+        await self.coordinator.send_command(API_LOAD_START_URL)
+
+
+class ChickadeeForegroundButton(ChickadeeEntity, ButtonEntity):
+    """Bring to foreground button."""
+
+    _attr_icon = "mdi:arrow-up-bold-box"
+    _attr_translation_key = "foreground"
+
+    def __init__(self, coordinator: ChickadeeCoordinator, device_id: str) -> None:
+        """Initialize the button."""
+        super().__init__(coordinator, device_id)
+        self._attr_unique_id = f"{device_id}_foreground"
+        self._attr_name = "Bring to Foreground"
+
+    async def async_press(self) -> None:
+        """Bring app to foreground."""
+        await self.coordinator.send_command(API_BRING_TO_FOREGROUND)
+
+
+# =============================================================================
+# Maintenance Buttons (CONFIG category)
+# =============================================================================
+
+
+class ChickadeeRefreshWebViewButton(ChickadeeEntity, ButtonEntity):
+    """Refresh WebView button - releases memory while staying on current page."""
+
+    _attr_icon = "mdi:refresh-circle"
+    _attr_translation_key = "refresh_webview"
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(self, coordinator: ChickadeeCoordinator, device_id: str) -> None:
+        """Initialize the button."""
+        super().__init__(coordinator, device_id)
+        self._attr_unique_id = f"{device_id}_refresh_webview"
+        self._attr_name = "Refresh WebView"
+
+    async def async_press(self) -> None:
+        """Refresh the WebView (navigate away and back to release memory)."""
+        await self.coordinator.send_command(API_REFRESH_WEBVIEW)
+
+
+class ChickadeeRestartButton(ChickadeeEntity, ButtonEntity):
+    """Restart app button."""
+
+    _attr_icon = "mdi:restart"
+    _attr_translation_key = "restart"
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(self, coordinator: ChickadeeCoordinator, device_id: str) -> None:
+        """Initialize the button."""
+        super().__init__(coordinator, device_id)
+        self._attr_unique_id = f"{device_id}_restart"
+        self._attr_name = "Restart App"
+
+    async def async_press(self) -> None:
+        """Restart the app."""
+        await self.coordinator.send_command(API_RESTART_APP)
+
+
+class ChickadeeRebootButton(ChickadeeEntity, ButtonEntity):
+    """Reboot device button. Requires root or system app installation."""
+
+    _attr_icon = "mdi:restart-alert"
+    _attr_translation_key = "reboot_device"
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(self, coordinator: ChickadeeCoordinator, device_id: str) -> None:
+        """Initialize the button."""
+        super().__init__(coordinator, device_id)
+        self._attr_unique_id = f"{device_id}_reboot_device"
+        self._attr_name = "Reboot Device"
+
+    async def async_press(self) -> None:
+        """Reboot the device."""
+        await self.coordinator.send_command(API_REBOOT_DEVICE)
+
+
+class ChickadeeClearCacheButton(ChickadeeEntity, ButtonEntity):
+    """Clear WebView cache button."""
+
+    _attr_icon = "mdi:cached"
+    _attr_translation_key = "clear_cache"
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(self, coordinator: ChickadeeCoordinator, device_id: str) -> None:
+        """Initialize the button."""
+        super().__init__(coordinator, device_id)
+        self._attr_unique_id = f"{device_id}_clear_cache"
+        self._attr_name = "Clear Cache"
+
+    async def async_press(self) -> None:
+        """Clear the WebView cache."""
+        await self.coordinator.send_command(API_CLEAR_CACHE)
+
+
+class ChickadeeClearStorageButton(ChickadeeEntity, ButtonEntity):
+    """Clear WebView local storage button."""
+
+    _attr_icon = "mdi:database-remove"
+    _attr_translation_key = "clear_storage"
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(self, coordinator: ChickadeeCoordinator, device_id: str) -> None:
+        """Initialize the button."""
+        super().__init__(coordinator, device_id)
+        self._attr_unique_id = f"{device_id}_clear_storage"
+        self._attr_name = "Clear Storage"
+
+    async def async_press(self) -> None:
+        """Clear the WebView local storage."""
+        await self.coordinator.send_command(API_CLEAR_WEBSTORAGE)

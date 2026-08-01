@@ -1,0 +1,498 @@
+"""RTSP URL resolution endpoint for Chickadee.
+
+Resolves a camera entity ID to a credential-free RTSP restream URL
+via go2rtc so tablets can connect directly via ExoPlayer without
+credential encoding issues.
+
+Falls back to the raw camera RTSP URL if go2rtc is not available.
+
+Endpoint: GET /api/chickadee/stream/resolve/{entity_id}
+Auth: HA Bearer token (requires_auth = True)
+Response: {"rtsp_url": "rtsp://..."} or {"rtsp_url": null}
+"""
+from __future__ import annotations
+
+import asyncio
+import ipaddress
+import logging
+import os
+from urllib.parse import urlparse
+
+import aiohttp
+
+from aiohttp import web
+
+from homeassistant.components.http import HomeAssistantView
+from homeassistant.core import HomeAssistant
+
+from .stream_proxy import _get_stream_source, _redact_url
+from .go2rtc_manager import Go2RtcManager
+from .feed_registry import get_frigate_camera_for_entity
+from .frigate_stream import build_frigate_rtsp_url
+
+_LOGGER = logging.getLogger(__name__)
+
+# go2rtc detection (legacy, used by _detect_go2rtc/_get_go2rtc_stream_name)
+_GO2RTC_API_PORT = 1984
+_GO2RTC_RTSP_PORT = 8554
+_go2rtc_available: bool | None = None
+_go2rtc_host: str | None = None
+
+# Shared go2rtc manager — initialized in __init__.py
+_manager: Go2RtcManager | None = None
+
+
+def set_go2rtc_manager(manager: Go2RtcManager) -> None:
+    """Set the shared go2rtc manager (called from __init__.py)."""
+    global _manager
+    _manager = manager
+
+
+async def _detect_go2rtc(hass: HomeAssistant) -> tuple[bool, str | None]:
+    """Detect go2rtc and return (available, host).
+
+    Checks localhost (HA add-on / same host) first.
+    """
+    global _go2rtc_available, _go2rtc_host
+    if _go2rtc_available is not None:
+        return _go2rtc_available, _go2rtc_host
+
+    for host in ("127.0.0.1", "localhost"):
+        try:
+            timeout = aiohttp.ClientTimeout(total=3)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(f"http://{host}:{_GO2RTC_API_PORT}/api/streams") as resp:
+                    if resp.status == 200:
+                        _go2rtc_available = True
+                        _go2rtc_host = host
+                        _LOGGER.info("go2rtc detected at %s:%d", host, _GO2RTC_API_PORT)
+                        return True, host
+        except Exception:
+            continue
+
+    _go2rtc_available = False
+    _go2rtc_host = None
+    _LOGGER.info("go2rtc not detected — will use raw RTSP URLs")
+    return False, None
+
+
+async def _go2rtc_has_rtsp_stream(name: str) -> bool:
+    """True if the host go2rtc currently serves a stream named ``name``.
+
+    The Frigate-routed live path hands the tablet ``rtsp://<host>:8554/<name>``.
+    A bare TCP-reachable probe (port open) is not enough: whichever go2rtc owns
+    the host's 8554 may key its streams by HA ``entity_id`` (Chickadee's own go2rtc
+    manager, or HA's built-in go2rtc) and have no stream by the *Frigate camera
+    name* — so DESCRIBE 404s and ExoPlayer spins forever. Verify the name exists
+    before advertising it; otherwise the caller falls back to the entity path,
+    which registers/serves the entity-named stream that already works.
+    """
+    for host in ("127.0.0.1", "localhost"):
+        try:
+            timeout = aiohttp.ClientTimeout(total=3)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(
+                    f"http://{host}:{_GO2RTC_API_PORT}/api/streams"
+                ) as resp:
+                    if resp.status != 200:
+                        continue
+                    streams = await resp.json()
+                    return isinstance(streams, dict) and name in streams
+        except Exception:
+            continue
+    return False
+
+
+async def _is_rtsp_reachable(rtsp_url: str, timeout: float = 2.0) -> bool:
+    """Quick TCP connect check to verify the RTSP source host:port is reachable."""
+    try:
+        parsed = urlparse(rtsp_url)
+        host = parsed.hostname
+        port = parsed.port or 554
+        if not host:
+            return False
+        _, writer = await asyncio.wait_for(
+            asyncio.open_connection(host, port), timeout=timeout
+        )
+        writer.close()
+        await writer.wait_closed()
+        return True
+    except Exception:
+        return False
+
+
+def _externalize_rtsp_host(url: str, ha_host: str) -> str:
+    """Rewrite a Docker-internal hostname in an RTSP URL to ``ha_host``.
+
+    Frigate/go2rtc camera entities report their restream URL using the
+    add-on's *container* hostname (e.g. ``rtsp://ccab4aaf-frigate-fa:8554/cam``),
+    which only resolves inside HA's Docker network. A tablet handed that URL
+    fails DNS (``EAI_NODATA``) and the card stays green. The same stream is
+    reachable at the HA host's mapped port, so swap the host while keeping
+    scheme, credentials, port, and path.
+
+    Only single-label hostnames (no dots, not an IP) are rewritten — real LAN
+    cameras use IPs or dotted/mDNS names, which are left untouched.
+    """
+    try:
+        p = urlparse(url)
+        host = p.hostname or ""
+        if not host:
+            return url
+        try:
+            ipaddress.ip_address(host)
+            return url  # an IP — already tablet-reachable
+        except ValueError:
+            pass
+        if "." in host:
+            return url  # FQDN / *.local mDNS — leave it
+        # Single-label (Docker-internal) host → rewrite to the HA host.
+        userinfo = ""
+        if p.username:
+            userinfo = p.username + (f":{p.password}" if p.password else "") + "@"
+        port = f":{p.port}" if p.port else ""
+        return f"{p.scheme}://{userinfo}{ha_host}{port}{p.path or ''}"
+    except Exception:  # noqa: BLE001 — never break resolve over a URL edge case
+        return url
+
+
+async def _get_go2rtc_stream_name(host: str, entity_id: str) -> str | None:
+    """Check if a camera entity has a go2rtc stream compatible with RTSP restreaming.
+
+    Only returns streams whose producers can be served over go2rtc's RTSP port.
+    Streams using echo:curl (HA supervisor API) only work via WebRTC/HTTP, not RTSP.
+    """
+    try:
+        timeout = aiohttp.ClientTimeout(total=3)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(f"http://{host}:{_GO2RTC_API_PORT}/api/streams") as resp:
+                if resp.status != 200:
+                    return None
+                streams = await resp.json()
+                # Check for exact entity_id match first, then common variants.
+                # HA creates _hd_stream / _sd_stream sub-entities for Tapo cameras,
+                # but go2rtc only knows the base _live_view stream name.
+                candidates = [entity_id, f"{entity_id}_live_view"]
+                # Strip common suffixes to find the base camera name
+                for suffix in ("_hd_stream", "_sd_stream", "_live_view"):
+                    if entity_id.endswith(suffix):
+                        base = entity_id[: -len(suffix)]
+                        candidates.extend([base, f"{base}_live_view"])
+                        break
+                for candidate in candidates:
+                    if candidate not in streams:
+                        continue
+                    # Check if any producer has a direct stream URL (rtsp://, rtmp://)
+                    # that go2rtc can restream over its RTSP port. Streams with only
+                    # echo:curl or exec: producers don't work via RTSP restream.
+                    stream_info = streams[candidate]
+                    producers = stream_info.get("producers") or []
+                    has_direct = False
+                    for prod in producers:
+                        url = ""
+                        if isinstance(prod, dict):
+                            url = prod.get("url", "")
+                        elif isinstance(prod, str):
+                            url = prod
+                        if url.startswith(("rtsp://", "rtmp://", "rtsps://")):
+                            has_direct = True
+                            break
+                        # Active producer with no URL but has a format_name means
+                        # the stream is currently connected (e.g. incoming RTSP)
+                        if isinstance(prod, dict) and prod.get("format_name") == "rtsp":
+                            has_direct = True
+                            break
+                    if has_direct:
+                        return candidate
+                    _LOGGER.debug(
+                        "go2rtc stream %s exists but has no direct producer "
+                        "(only echo/exec) — skipping RTSP restream",
+                        candidate,
+                    )
+                return None
+    except Exception:
+        return None
+
+
+_GO2RTC_CONFIG_PATH = "/config/go2rtc.yaml"
+_go2rtc_restart_pending = False
+
+
+async def _register_go2rtc_stream(
+    hass: HomeAssistant, stream_name: str, rtsp_url: str
+) -> bool:
+    """Register a stream in go2rtc by adding it to go2rtc.yaml and restarting.
+
+    API-registered streams (POST /api/streams) are ephemeral and don't serve
+    on go2rtc's RTSP port. Only YAML-configured streams work for RTSP restreaming.
+    """
+    import yaml
+    from pathlib import Path
+
+    global _go2rtc_restart_pending
+
+    config_path = Path(_GO2RTC_CONFIG_PATH)
+    if not config_path.exists():
+        _LOGGER.warning("go2rtc config not found at %s", _GO2RTC_CONFIG_PATH)
+        return False
+
+    try:
+        content = config_path.read_text()
+        config = yaml.safe_load(content) or {}
+        streams = config.get("streams") or {}
+
+        if stream_name in streams:
+            _LOGGER.debug("go2rtc stream %s already in config", stream_name)
+            return True
+
+        # Append to YAML file directly to preserve existing formatting.
+        # If streams: is empty ({}) or missing, replace the line.
+        if not streams:
+            # Replace "streams: {}" or add "streams:" section
+            if "streams:" in content:
+                content = content.replace("streams: {}", "streams:")
+                content = content.replace("streams:{}", "streams:")
+            else:
+                content = content.rstrip() + "\nstreams:\n"
+
+        # Append the new stream entry
+        content = content.rstrip() + f"\n  {stream_name}:\n  - '{rtsp_url}'\n"
+        config_path.write_text(content)
+        _LOGGER.info(
+            "Added go2rtc stream %s → %s to config",
+            stream_name,
+            _redact_url(rtsp_url),
+        )
+
+        # Restart go2rtc addon to pick up new config.
+        # Batch restarts — if multiple streams are registered in quick succession,
+        # only restart once after a short delay.
+        if not _go2rtc_restart_pending:
+            _go2rtc_restart_pending = True
+
+            async def _delayed_restart():
+                global _go2rtc_restart_pending
+                import asyncio
+                await asyncio.sleep(3)  # Wait for other streams to register
+                _go2rtc_restart_pending = False
+                try:
+                    timeout = aiohttp.ClientTimeout(total=10)
+                    token = os.environ.get("SUPERVISOR_TOKEN", "")
+                    headers = {"Authorization": f"Bearer {token}"}
+                    async with aiohttp.ClientSession(timeout=timeout) as session:
+                        # Find go2rtc addon slug dynamically
+                        slug = None
+                        async with session.get(
+                            "http://supervisor/addons",
+                            headers=headers,
+                        ) as resp:
+                            if resp.status == 200:
+                                data = await resp.json()
+                                addons = data.get("data", {}).get("addons", [])
+                                for addon in addons:
+                                    if "go2rtc" in addon.get("name", "").lower() or \
+                                       "go2rtc" in addon.get("slug", "").lower():
+                                        slug = addon["slug"]
+                                        break
+                        if not slug:
+                            _LOGGER.warning("Could not find go2rtc addon to restart")
+                            return
+
+                        async with session.post(
+                            f"http://supervisor/addons/{slug}/restart",
+                            headers=headers,
+                        ) as resp:
+                            if resp.status == 200:
+                                _LOGGER.info(
+                                    "Restarted go2rtc addon (%s) to load new streams",
+                                    slug,
+                                )
+                            else:
+                                body = await resp.text()
+                                _LOGGER.warning(
+                                    "Failed to restart go2rtc addon %s: HTTP %d: %s",
+                                    slug, resp.status, body,
+                                )
+                except Exception as err:
+                    _LOGGER.warning("Failed to restart go2rtc addon: %s", err)
+
+            hass.async_create_task(_delayed_restart())
+
+        return True
+    except Exception as err:
+        _LOGGER.warning("Failed to register go2rtc stream %s: %s", stream_name, err)
+        return False
+
+
+class ChickadeeStreamResolveView(HomeAssistantView):
+    """Resolve a camera entity to its RTSP stream source URL."""
+
+    url = "/api/chickadee/stream/resolve/{entity_id:.*}"
+    name = "api:chickadee:stream:resolve"
+    requires_auth = True
+
+    async def get(self, request: web.Request, entity_id: str) -> web.Response:
+        """Resolve entity to RTSP URL.
+
+        Prefers go2rtc restream URL (no credentials, ExoPlayer-friendly).
+        Falls back to raw camera RTSP URL if go2rtc unavailable.
+
+        Query params:
+          ?check_only=1  — return availability + existing go2rtc URL only,
+                           skip auto-registration (used by strip for offline detection)
+        """
+        hass: HomeAssistant = request.app["hass"]
+        check_only = request.query.get("check_only") == "1"
+
+        if not entity_id.startswith("camera."):
+            return web.json_response(
+                {"error": f"Not a camera entity: '{entity_id}'"}, status=400
+            )
+
+        state = hass.states.get(entity_id)
+        if not state:
+            return web.json_response(
+                {"error": f"Entity '{entity_id}' not found"}, status=404
+            )
+
+        # Entity availability — "idle" is normal (camera on, not actively viewed).
+        # Only "unavailable" (offline/disconnected) and "off" (explicitly disabled)
+        # mean the camera can't stream.
+        available = state.state not in ("unavailable", "off")
+
+        # Phase A: Frigate-routed live stream.
+        #
+        # If this entity is mapped to a Frigate camera in the feed registry,
+        # prefer Frigate's restream over the HA camera entity. Frigate connects
+        # to cameras directly via RTSP and survives upstream HA-integration
+        # failures (e.g. tapo_control going "Not loaded" after an HA core
+        # update). When Frigate routes successfully, the feed reports
+        # ``available: true`` even if the underlying entity is ``unavailable``
+        # — which is the whole point of this path.
+        #
+        # Opt-out: a feed with ``frigate_camera_override == "__none__"`` is
+        # excluded by ``get_frigate_camera_for_entity`` and falls through to
+        # the legacy entity path below.
+        frigate_camera = await get_frigate_camera_for_entity(hass, entity_id)
+        if frigate_camera:
+            ha_host = request.host.split(":")[0]
+            frigate_rtsp = build_frigate_rtsp_url(ha_host, frigate_camera)
+            # The host go2rtc must actually SERVE a stream by this name. A bare
+            # TCP-reachable check passes whenever *any* go2rtc holds :8554 —
+            # including Chickadee's own go2rtc manager / HA's built-in go2rtc, which
+            # key streams by entity_id, not Frigate camera name. Connecting there
+            # for "<frigate_camera>" 404s on DESCRIBE and spins the tablet. Only
+            # take the Frigate path when the named stream actually exists.
+            if await _go2rtc_has_rtsp_stream(frigate_camera):
+                _LOGGER.info(
+                    "Resolved %s via Frigate camera %s → %s",
+                    entity_id, frigate_camera, frigate_rtsp,
+                )
+                return web.json_response({
+                    "rtsp_url": frigate_rtsp,
+                    "available": True,
+                    "via": "frigate",
+                    "frigate_camera": frigate_camera,
+                })
+            # Frigate matched but the host go2rtc has no stream by that name
+            # (e.g. the go2rtc on :8554 keys streams by entity_id, or Frigate's
+            # restream isn't the one exposed on the HA host). Fall through to the
+            # legacy entity path, which registers/serves the entity-named stream
+            # that works — so behavior is no worse than before Phase A.
+            _LOGGER.info(
+                "Entity %s matched Frigate camera %s but host go2rtc has no "
+                "'%s' stream — falling back to entity path",
+                entity_id, frigate_camera, frigate_camera,
+            )
+
+        # Get the raw RTSP source URL from HA
+        raw_rtsp = await _get_stream_source(hass, entity_id)
+        # A Frigate/go2rtc camera entity reports its restream URL with the
+        # add-on's Docker-internal hostname — unresolvable from tablets. Swap
+        # it for the HA host so the URL we hand out is LAN-reachable. No-op for
+        # IP-based camera sources (the common case).
+        if raw_rtsp:
+            ha_host = request.host.split(":")[0]
+            raw_rtsp = _externalize_rtsp_host(raw_rtsp, ha_host)
+        has_credentials = bool(
+            raw_rtsp
+            and "@" in raw_rtsp.split("//", 1)[-1].split("/", 1)[0]
+        )
+
+        # All RTSP streams go through go2rtc — it handles auth for credentialed
+        # streams and fixes malformed Content-Base headers from some RTSP servers
+        # (e.g. pedroSG94 returns Content-Base: rtsp://:0/ which breaks ExoPlayer).
+        if raw_rtsp:
+            reachable = await _is_rtsp_reachable(raw_rtsp)
+            if not reachable:
+                _LOGGER.info(
+                    "Credentialed RTSP unreachable for %s: %s",
+                    entity_id, _redact_url(raw_rtsp),
+                )
+                return web.json_response({
+                    "rtsp_url": None,
+                    "available": False,
+                })
+
+            if check_only:
+                # Just confirm availability — don't register yet
+                return web.json_response({
+                    "rtsp_url": None,
+                    "available": available,
+                })
+
+            # Prefer sub-stream for tablet playback
+            reg_url = raw_rtsp
+            if "/stream1" in reg_url:
+                reg_url = reg_url.replace("/stream1", "/stream2")
+                _LOGGER.debug(
+                    "Substituted /stream1 → /stream2 for tablet-friendly resolution"
+                )
+
+            # Credential-free sources: connect ExoPlayer directly (lower latency,
+            # avoids go2rtc TCP relay buffer that adds burstiness).
+            # Credentialed sources: must go through go2rtc to strip credentials.
+            if not has_credentials:
+                _LOGGER.info(
+                    "Resolved %s → %s (direct, no credentials)",
+                    entity_id, _redact_url(reg_url),
+                )
+                return web.json_response({
+                    "rtsp_url": reg_url,
+                    "available": available,
+                })
+
+            # Register in go2rtc (existing or managed subprocess)
+            if _manager and await _manager.ensure():
+                rtsp_url_template = await _manager.register_stream(entity_id, reg_url)
+                if rtsp_url_template:
+                    ha_ip = request.host.split(":")[0]
+                    rtsp_url = rtsp_url_template.replace("{ha_ip}", ha_ip)
+                    _LOGGER.info(
+                        "Resolved %s → %s (via go2rtc)",
+                        entity_id, rtsp_url,
+                    )
+                    return web.json_response({
+                        "rtsp_url": rtsp_url,
+                        "available": available,
+                    })
+
+        # No RTSP URL to hand the tablet. It will use the MJPEG fallback — but
+        # that path needs the SAME stream source (ffmpeg over raw_rtsp). So:
+        #   - raw_rtsp found, but go2rtc registration didn't yield a URL:
+        #     the source exists, MJPEG/ffmpeg can still serve it → keep
+        #     `available` (state-based).
+        #   - raw_rtsp is None (no stream source at all, e.g. a device camera
+        #     that isn't publishing — state="idle" but nothing to stream):
+        #     neither RTSP nor MJPEG can serve it. Report offline so the tablet
+        #     shows it as unavailable instead of a blank/green card.
+        return web.json_response({
+            "rtsp_url": None,
+            "available": available if raw_rtsp else False,
+        })
+
+
+def register_stream_resolve_views(hass: HomeAssistant) -> None:
+    """Register stream resolve HTTP views."""
+    hass.http.register_view(ChickadeeStreamResolveView())
+    _LOGGER.info("Registered Chickadee stream resolve view")

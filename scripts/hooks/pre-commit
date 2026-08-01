@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# GENERATED REPO — refuse hand-edits to the vendored integration package.
+#
+# Everything under custom_components/ here is produced by brand-gen in the
+# canonical Dashie repo. An edit made here commits, diffs and reviews exactly
+# like real work, and is then destroyed by the next regeneration with no error
+# and no log. Author it in the SOURCE repo instead.
+#
+# Exempt: BRAND_GEN=1 (the generator sets this — writing these trees is its job).
+
+set -euo pipefail
+
+[[ "${BRAND_GEN:-0}" == "1" ]] && exit 0
+
+STAGED=()
+while IFS= read -r line; do
+    [[ -n "$line" ]] && STAGED+=("$line")
+done < <(git diff --cached --name-only --diff-filter=ACMR)
+
+[[ ${#STAGED[@]} -eq 0 ]] && exit 0
+
+OFFENDING=()
+for f in "${STAGED[@]}"; do
+    case "$f" in
+        custom_components/*) OFFENDING+=("$f") ;;
+    esac
+done
+
+[[ ${#OFFENDING[@]} -eq 0 ]] && exit 0
+
+SOURCE="$(sed -n 's/^Generated from \([^ ]*\) @.*/\1/p' custom_components/*/GENERATED 2>/dev/null | head -1)"
+
+echo "" >&2
+echo "pre-commit: ❌ refusing — these files are GENERATED and the next" >&2
+echo "               regeneration will delete your changes, silently." >&2
+echo "" >&2
+for f in "${OFFENDING[@]}"; do echo "    $f" >&2; done
+echo "" >&2
+echo "  → Author this in ${SOURCE:-the canonical Dashie integration repo}," >&2
+echo "    commit, PUSH it (brand-gen reads origin/<ref>, not your working" >&2
+echo "    tree), then regenerate:" >&2
+echo "" >&2
+echo "      npm run gen:brand" >&2
+echo "" >&2
+echo "  If you are certain (you are brand-gen, or repairing a broken tree):" >&2
+echo "    BRAND_GEN=1 git commit ..." >&2
+echo "" >&2
+exit 1
