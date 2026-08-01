@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Config flow for Chickadee integration."""
 from __future__ import annotations
 

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Bridge to the Chickadee add-on for the account credential.
 
 The account login/JWT lives in the **add-on** (the household account hub). The
@@ -149,7 +150,7 @@ def _is_chickadee_addon(a: dict) -> bool:
 
       family  — repo `chickadee-ha-app`, slugs `chickadee` / `chickadee_dev`,
                 names "Chickadee Console" / "Chickadee Console (Dev)"
-      HA      — repo `chickadee-ha-console` (formerly Chickadee), slugs
+      HA      — repo `chickadee` (formerly Chickadee), slugs
                 `chickadee` / `chickadee_dev`, names "Chickadee[ (Dev)]"
 
     Repo installs prefix the slug with a repo hash (`62f754e2_chickadee_dev`), so match

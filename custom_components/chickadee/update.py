@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Update platform for Chickadee integration."""
 from __future__ import annotations
 
@@ -28,7 +29,7 @@ from .const import DOMAIN
 _LOGGER = logging.getLogger(__name__)
 
 # GitHub API endpoint for releases
-GITHUB_API_RELEASES = "https://api.github.com/repos/jwlerch78/chickadee-ha-integration/releases/latest"
+GITHUB_API_RELEASES = "https://api.github.com/repos/jwlerch78/chickadee-integration/releases/latest"
 
 # Check for updates every 6 hours
 UPDATE_CHECK_INTERVAL = timedelta(hours=6)
@@ -169,7 +170,7 @@ class ChickadeeUpdateEntity(CoordinatorEntity[ChickadeeUpdateCoordinator], Updat
         """Return the URL to the release notes."""
         if self.coordinator.data:
             return self.coordinator.data.get("release_url")
-        return "https://github.com/jwlerch78/chickadee-ha-integration/releases"
+        return "https://github.com/jwlerch78/chickadee-integration/releases"
 
     async def async_release_notes(self) -> str | None:
         """Return the release notes for the latest version."""

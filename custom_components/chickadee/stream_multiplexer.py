@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Shared MJPEG stream multiplexer for Chickadee Video Feeds.
 
 Instead of one FFmpeg process per client, runs one FFmpeg per unique

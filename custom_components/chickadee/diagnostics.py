@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Diagnostics support for Chickadee.
 
 Lets the user download Chickadee's on-device diagnostics (in-memory event

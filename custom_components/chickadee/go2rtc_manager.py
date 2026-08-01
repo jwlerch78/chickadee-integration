@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """go2rtc manager for Chickadee.
 
 Detects an existing go2rtc instance (add-on, Frigate, standalone) or

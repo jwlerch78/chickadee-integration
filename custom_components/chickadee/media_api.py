@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Media API for Chickadee - serves photos from HA's media folder.
 
 Supports configurable media base path via:

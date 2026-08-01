@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """RTSP URL resolution endpoint for Chickadee.
 
 Resolves a camera entity ID to a credential-free RTSP restream URL

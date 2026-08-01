@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Chickadee integration for Home Assistant."""
 from __future__ import annotations
 

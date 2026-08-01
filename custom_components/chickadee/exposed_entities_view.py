@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Exposed-entities endpoint for Chickadee.
 
 Returns the entity IDs the user has curated as "exposed to Assist" (HA Settings →

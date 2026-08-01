@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Device name endpoint for Chickadee.
 
 Returns HA device registry names for all Chickadee devices so Android tablets

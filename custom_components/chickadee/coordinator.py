@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """DataUpdateCoordinator for Chickadee."""
 from __future__ import annotations
 

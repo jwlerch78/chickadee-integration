@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Sensor push endpoint for instant binary sensor updates.
 
 Instead of waiting for the 5-second poll cycle, devices POST state changes

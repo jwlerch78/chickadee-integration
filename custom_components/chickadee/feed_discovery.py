@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Camera discovery for Chickadee video feeds.
 
 Endpoint: GET /api/chickadee/feeds/discover

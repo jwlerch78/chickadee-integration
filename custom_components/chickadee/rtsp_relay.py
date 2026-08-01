@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Lightweight RTSP relay for Chickadee.
 
 Proxies RTSP connections from ExoPlayer tablets to upstream cameras,

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Central Immich credential store for Chickadee.
 
 Stores the Immich access token and server URL centrally in HA so that

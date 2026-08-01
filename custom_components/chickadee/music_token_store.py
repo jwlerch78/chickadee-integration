@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Central Music Assistant token store for Chickadee.
 
 Stores the MA JWT token centrally in HA so that multiple tablets

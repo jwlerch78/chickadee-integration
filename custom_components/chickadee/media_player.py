@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Media player platform for Chickadee integration.
 
 Modeled exactly after Fully Kiosk Browser's media player for Music Assistant

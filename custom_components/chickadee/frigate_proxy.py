@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Frigate API proxy for Chickadee.
 
 Proxies Frigate recording/event API calls through the HA integration so

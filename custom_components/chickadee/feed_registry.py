@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Centralized Video Feed Registry for Chickadee.
 
 Manages household-level feed definitions and per-device subscriptions.

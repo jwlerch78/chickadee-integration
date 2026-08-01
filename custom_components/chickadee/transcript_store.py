@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """HA-local voice transcript store for Chickadee (build plan §17).
 
 When an account opts into transcript retention AND the turn runs in caller mode

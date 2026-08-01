@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Music Assistant API relay for Chickadee.
 
 Proxies MA REST API commands through HA so that remote/proxy-connected

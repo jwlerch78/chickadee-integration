@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """MJPEG stream proxy for Chickadee Video Feed PiP overlays.
 
 Provides a real-time MJPEG stream by resolving any HA camera entity's

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Frigate-routed live stream helpers for Chickadee video feeds.
 
 When a feed is matched to a Frigate camera, prefer routing the LIVE stream

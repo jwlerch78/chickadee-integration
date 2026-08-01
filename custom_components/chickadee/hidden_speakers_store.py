@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Central hidden speakers store for Chickadee.
 
 Stores the list of speaker IDs hidden across all Chickadee tablets.
