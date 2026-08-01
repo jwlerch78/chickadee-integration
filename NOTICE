@@ -1,0 +1,48 @@
+Chickadee — device integration
+==============================
+
+Licensed under the GNU Affero General Public License v3.0. See LICENSE.
+
+Lineage, and why the licence differs from upstream
+--------------------------------------------------
+
+This tree is GENERATED from jwlerch78/dashie-ha-integration, which is published
+under the MIT License.
+
+The MIT License permits redistribution under different terms provided its
+copyright and permission notices are preserved. They are, in full, below.
+
+So this tree is AGPL-3.0 while the tree it was generated from is MIT. That is
+deliberate rather than an oversight: Chickadee is a source-published product,
+and the AGPL is what keeps it source-published — including for anyone who runs a
+modified copy as a network service. Stated here rather than left to be inferred
+by a reader who notices two projects with two different LICENSE files.
+
+Nothing about this removes anyone's MIT rights to the upstream project. The
+upstream remains MIT and can be used under those terms; this derived tree adds
+the AGPL's conditions to this copy only.
+
+Original MIT notice, preserved from the upstream project
+---------------------------------------------------------
+
+MIT License
+
+Copyright (c) 2026 Dashie LLC
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
