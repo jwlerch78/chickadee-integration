@@ -6,8 +6,16 @@ kiosk on your network.
 
 Chickadee is free and source-published, with no account and no metered service.
 
-> **This repository is being set up.** The integration lands here as it is
-> generated; until then this README is all there is.
+## Installing it
+
+Add this repository to [HACS](https://hacs.xyz) as a custom repository, install
+**Chickadee**, and restart Home Assistant. It is only useful alongside the
+Chickadee Android app running on a tablet or TV on the same network — without a
+device to talk to, it has nothing to control.
+
+This is **not** the voice integration; the
+[Chickadee add-on](https://github.com/jwlerch78/chickadee) installs that one for
+you.
 
 Related: [chickadee](https://github.com/jwlerch78/chickadee) ·
 [chickadee-voice-integration](https://github.com/jwlerch78/chickadee-voice-integration)
@@ -23,6 +31,11 @@ all.
 That is normal for a generated artifact, and it is stated here rather than left
 to be discovered. The generator, its substitution tables and the checks that gate
 them are part of the source it is generated from.
+
+The full disclosure — including the brand's own history, which reversed twice and
+is corrected by appending rather than by editing — is on the Dashie side, where
+the source lives:
+[PROVENANCE.md](https://github.com/jwlerch78/dashie-ha/blob/main/PROVENANCE.md).
 
 ## Licence
 
