@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""HA-local voice transcript store for Chickadee (build plan §17).
+"""HA-local voice transcript store for Chickadee.
 
 When an account opts into transcript retention AND the turn runs in caller mode
 (anonymous kiosk via the voice gateway), the cloud brain persists NO transcript
