@@ -954,8 +954,8 @@ class ChickadeeSnapshotView(HomeAssistantView):
                 headers={
                     "Content-Type": "image/jpeg",
                     "Cache-Control": "no-cache",
-                    "X-Chickadee-Snapshot-Source": "cache",
-                    "X-Chickadee-Snapshot-Age-Ms": str(age_ms),
+                    "X-Dashie-Snapshot-Source": "cache",
+                    "X-Dashie-Snapshot-Age-Ms": str(age_ms),
                 },
             )
 
@@ -998,7 +998,7 @@ class ChickadeeSnapshotView(HomeAssistantView):
             headers={
                 "Content-Type": "image/jpeg",
                 "Cache-Control": "no-cache",
-                "X-Chickadee-Snapshot-Source": "ffmpeg",
+                "X-Dashie-Snapshot-Source": "ffmpeg",
             },
         )
 
