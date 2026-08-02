@@ -1,0 +1,108 @@
+# jwlerch78/chickadee-integration → .github/workflows/ci.yml
+#
+# The DEVICE integration, installed through HACS. Its Dashie source
+# (dashie-ha-integration) runs hassfest + hacs on every push; this generated twin
+# has run neither since it was created. Those two actions are Home Assistant's own
+# validators — the cheapest real coverage available here, and the most embarrassing
+# to be missing from a repo strangers install from.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  hassfest:
+    name: hassfest (HA's own manifest validator)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: home-assistant/actions/hassfest@master
+
+  hacs:
+    name: HACS validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hacs/action@main
+        with:
+          category: integration
+
+  python:
+    name: The integration parses and its imports resolve
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # ast.parse, not py_compile: py_compile writes __pycache__ into the tree,
+      # and a syntax check must leave no trace of itself.
+      - name: Parse every module
+        run: |
+          python3 - <<'PY'
+          import ast, pathlib, sys
+          bad = []
+          for f in pathlib.Path('custom_components').rglob('*.py'):
+              try:
+                  ast.parse(f.read_text(encoding='utf-8'), filename=str(f))
+              except SyntaxError as e:
+                  bad.append(f'{e.filename}:{e.lineno}: {e.msg}')
+          if bad:
+              print('\n'.join(bad)); sys.exit(1)
+          print('all modules parse')
+          PY
+
+      # A relative import naming a module that is not in the tree is an
+      # ImportError at HA startup — the integration simply does not load. It is
+      # how a generator drop breaks a product quietly, and `git archive` only
+      # takes COMMITTED content, so an uncommitted module vanishes the same way.
+      - name: Relative imports resolve
+        run: |
+          python3 - <<'PY'
+          import pathlib, re, sys
+          bad = []
+          for pkg in pathlib.Path('custom_components').iterdir():
+              if not pkg.is_dir():
+                  continue
+              mods = {p.stem for p in pkg.rglob('*.py')} | {
+                  d.name for d in pkg.iterdir() if d.is_dir()}
+              for f in pkg.rglob('*.py'):
+                  for i, line in enumerate(f.read_text(encoding='utf-8').splitlines(), 1):
+                      m = re.match(r'\s*from\s+\.(\w+)\s+import\b', line)
+                      if m and m.group(1) not in mods:
+                          bad.append(f'{f}:{i}: from .{m.group(1)} — not in the package')
+          if bad:
+              print('\n'.join(bad)); sys.exit(1)
+          print('all relative imports resolve')
+          PY
+
+  provenance:
+    name: Provenance is verifiable by someone who is not us
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # A `--from-local` stamp names a SHA that was never pushed: the claim cannot
+      # be checked by anyone off the authoring machine, which is worse than no
+      # claim because it reads like one. Both Chickadee add-on channels were in
+      # exactly this state on 2026-08-02 and nothing said so.
+      - name: GENERATED stamp is well-formed and not --from-local
+        run: |
+          set -e
+          found=0
+          while IFS= read -r stamp; do
+            found=1
+            echo "→ $stamp: $(cat "$stamp")"
+            if grep -q 'BUILT FROM LOCAL HEAD' "$stamp"; then
+              echo "❌ $stamp records a --from-local build — the recorded SHA was never pushed,"
+              echo "   so nobody outside the authoring machine can verify this tree's provenance."
+              exit 1
+            fi
+            grep -Eq 'Generated from [^ ]+ @ [0-9a-f]{7,40}' "$stamp" || {
+              echo "❌ $stamp is not in the expected 'Generated from <repo> @ <sha>' form"; exit 1; }
+          done < <(find . -name GENERATED -not -path './.git/*')
+          [ "$found" = 1 ] || { echo "❌ no GENERATED stamp — this tree claims no provenance at all"; exit 1; }
+          echo "✅ provenance stamp(s) verifiable"
